@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Settings } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 import { fetchUserPosts } from '../api/postService.js'
 import { logout } from '../api/authService.js'
-import { computeUserScore } from '../utils/scoring.js'
-import { getLocationLabel } from '../utils/scoring.js'
+import { computeUserScore, getLocationLabel } from '../utils/scoring.js'
 import SkeletonLoader from '../components/SkeletonLoader.jsx'
 
 function formatDate(iso) {
@@ -14,7 +14,7 @@ function formatDate(iso) {
 export default function ProfileScreen() {
   const { user, logout: authLogout } = useAuth()
   const navigate = useNavigate()
-  const [posts, setPosts]     = useState([])
+  const [posts,   setPosts]   = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -33,12 +33,29 @@ export default function ProfileScreen() {
 
   return (
     <div className="min-h-screen bg-caca-bg font-nunito pb-20">
+
       {/* Header profil */}
-      <div className="bg-caca-primary text-white px-6 pt-10 pb-8 flex flex-col items-center gap-3">
-        <div className="w-20 h-20 rounded-full bg-white/20 flex items-center justify-center text-5xl">
-          {user?.avatar ?? '💩'}
+      <div className="bg-caca-primary text-white px-6 pt-10 pb-8 flex flex-col items-center gap-3 relative">
+
+        {/* Bouton paramètres */}
+        <button
+          onClick={() => navigate('/parametres')}
+          className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 flex items-center justify-center hover:bg-white/30 transition"
+          aria-label="Paramètres"
+        >
+          <Settings size={20} className="text-white" />
+        </button>
+
+        {/* Photo de profil ou emoji */}
+        <div className="w-20 h-20 rounded-full overflow-hidden bg-white/20 flex items-center justify-center border-2 border-white/40">
+          {user?.photoURL
+            ? <img src={user.photoURL} alt="Photo de profil" className="w-full h-full object-cover" />
+            : <span className="text-5xl">{user?.avatar ?? '💩'}</span>
+          }
         </div>
+
         <h2 className="text-2xl font-black">{user?.pseudo ?? 'Anonyme'}</h2>
+
         <div className="flex gap-6 mt-2">
           <div className="text-center">
             <p className="text-3xl font-black">{score}</p>
@@ -59,7 +76,9 @@ export default function ProfileScreen() {
         {loading && <SkeletonLoader count={3} />}
 
         {!loading && posts.length === 0 && (
-          <p className="text-caca-muted text-sm text-center py-8">Aucun BeCaca pour l'instant. Lance-toi !</p>
+          <p className="text-caca-muted text-sm text-center py-8">
+            Aucun BeCaca pour l'instant. Lance-toi !
+          </p>
         )}
 
         {!loading && posts.map((post) => (

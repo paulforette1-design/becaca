@@ -8,10 +8,10 @@ import MapScreen         from './screens/MapScreen.jsx'
 import LeaderboardScreen from './screens/LeaderboardScreen.jsx'
 import ProfileScreen     from './screens/ProfileScreen.jsx'
 import CameraScreen      from './screens/CameraScreen.jsx'
+import SettingsScreen    from './screens/SettingsScreen.jsx'
 
 function ProtectedRoute({ children }) {
   const { user, isInitializing } = useAuth()
-  // Attend que Firebase confirme l'état de session avant de rediriger
   if (isInitializing) return null
   return user ? children : <Navigate to="/onboarding" replace />
 }
@@ -31,35 +31,27 @@ export default function App() {
     <Routes>
       <Route path="/onboarding" element={<OnboardingScreen />} />
 
-      {/* Écran caméra plein écran — sans AppLayout ni BottomNav */}
+      {/* Plein écran — sans AppLayout */}
       <Route path="/camera" element={
-        <ProtectedRoute>
-          <CameraScreen />
-        </ProtectedRoute>
+        <ProtectedRoute><CameraScreen /></ProtectedRoute>
+      } />
+      <Route path="/parametres" element={
+        <ProtectedRoute><SettingsScreen /></ProtectedRoute>
       } />
 
       <Route path="/feed" element={
-        <ProtectedRoute>
-          <AppLayout><FeedScreen /></AppLayout>
-        </ProtectedRoute>
+        <ProtectedRoute><AppLayout><FeedScreen /></AppLayout></ProtectedRoute>
       } />
       <Route path="/map" element={
-        <ProtectedRoute>
-          <AppLayout><MapScreen /></AppLayout>
-        </ProtectedRoute>
+        <ProtectedRoute><AppLayout><MapScreen /></AppLayout></ProtectedRoute>
       } />
       <Route path="/classement" element={
-        <ProtectedRoute>
-          <AppLayout><LeaderboardScreen /></AppLayout>
-        </ProtectedRoute>
+        <ProtectedRoute><AppLayout><LeaderboardScreen /></AppLayout></ProtectedRoute>
       } />
       <Route path="/profil" element={
-        <ProtectedRoute>
-          <AppLayout><ProfileScreen /></AppLayout>
-        </ProtectedRoute>
+        <ProtectedRoute><AppLayout><ProfileScreen /></AppLayout></ProtectedRoute>
       } />
 
-      {/* Redirect racine */}
       <Route path="/" element={<Navigate to="/feed" replace />} />
       <Route path="*" element={<Navigate to="/feed" replace />} />
     </Routes>
