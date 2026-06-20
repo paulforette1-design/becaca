@@ -1,18 +1,25 @@
 import { useState, useRef, useCallback } from 'react'
 
 /**
- * Double caméra : frontale (selfie) + arrière (environnement).
+ * Caméra séquentielle (compatible iOS Safari).
  *
- * Usage avec CameraScreen :
- *   openStreams(backVideoEl, frontVideoEl) → attache les streams aux éléments <video>
- *   capture(backVideoEl, frontVideoEl)    → snappe et stoppe les streams
- *   stopStreams()                         → stoppe sans capturer (ex: fermeture)
+ * iOS n'autorise qu'un seul flux caméra actif à la fois.
+ * Solution : viewfinder = caméra arrière uniquement.
+ * À la capture : snap arrière → bascule caméra avant → snap avant.
+ *
+ * Usage :
+ *   openBackCamera(backVideoEl)  → démarre le viewfinder
+ *   capture(backVideoEl)         → snap arrière + snap avant séquentiels
+ *   stopStreams()                → cleanup
  */
 export const useCamera = () => {
-  const [isReady, setIsReady]   = useState(false)
-  const [error,   setError]     = useState(null)
-  const backStreamRef           = useRef(null)
-  const frontStreamRef          = useRef(null)
+  const [isReady,  setIsReady]  = useState(false)
+  const [isCapturing, setIsCapturing] = useState(false)
+  const [error,    setError]    = useState(null)
+  const backStreamRef  = useRef(null)
+  const frontStreamRef = useRef(null)
+
+  // ─── Helpers ──────────────────────────────────────────────────
 
   const openStream = async (facingMode) => {
     try {
@@ -29,48 +36,14 @@ export const useCamera = () => {
     }
   }
 
-  /**
-   * Ouvre les deux streams et les attache aux éléments <video> fournis.
-   * Retourne true si au moins une caméra est disponible.
-   */
-  const openStreams = useCallback(async (backVideoEl, frontVideoEl) => {
-    setError(null)
-    setIsReady(false)
-
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setError('Caméra non disponible sur cet appareil.')
-      return false
-    }
-
-    // Ouverture parallèle des deux caméras
-    const [backStream, frontStream] = await Promise.all([
-      openStream('environment'),
-      openStream('user'),
-    ])
-
-    backStreamRef.current  = backStream
-    frontStreamRef.current = frontStream
-
-    if (backStream && backVideoEl) {
-      backVideoEl.srcObject = backStream
-    }
-    if (frontStream && frontVideoEl) {
-      frontVideoEl.srcObject = frontStream
-    }
-
-    if (!backStream && !frontStream) {
-      setError('Accès aux caméras refusé ou indisponible.')
-      return false
-    }
-
-    setIsReady(true)
-    return true
-  }, [])
+  const stopStream = (streamRef) => {
+    streamRef.current?.getTracks().forEach((t) => t.stop())
+    streamRef.current = null
+  }
 
   /**
-   * Capture une image depuis un élément <video> via canvas.
-   * @param {HTMLVideoElement} videoEl
-   * @param {boolean} mirror — si true, retourne l'image horizontalement (caméra frontale)
+   * Capture un frame depuis un élément <video> via canvas.
+   * mirror = true → flip horizontal (caméra frontale)
    */
   const captureFrame = (videoEl, mirror = false) => {
     if (!videoEl || !videoEl.videoWidth) return null
@@ -87,41 +60,114 @@ export const useCamera = () => {
   }
 
   /**
-   * Capture simultanée depuis les deux <video>, puis stoppe les streams.
-   * La caméra frontale est capturée en miroir (cohérent avec le preview live).
+   * Attend qu'un élément <video> ait reçu des données vidéo.
    */
-  const capture = useCallback((backVideoEl, frontVideoEl) => {
-    const photoBack  = backStreamRef.current  ? captureFrame(backVideoEl,  false) : null
-    const photoFront = frontStreamRef.current ? captureFrame(frontVideoEl, true)  : null
+  const waitForVideo = (videoEl, timeoutMs = 3000) =>
+    new Promise((resolve) => {
+      if (videoEl.readyState >= 2) { resolve(); return }
+      const onReady = () => { videoEl.removeEventListener('canplay', onReady); resolve() }
+      videoEl.addEventListener('canplay', onReady)
+      setTimeout(resolve, timeoutMs) // fallback timeout
+    })
 
-    // Stoppe immédiatement après la capture
-    backStreamRef.current?.getTracks().forEach((t) => t.stop())
-    frontStreamRef.current?.getTracks().forEach((t) => t.stop())
-    backStreamRef.current  = null
-    frontStreamRef.current = null
+  // ─── API publique ──────────────────────────────────────────────
+
+  /**
+   * Ouvre uniquement la caméra ARRIÈRE pour le viewfinder.
+   * Compatible iOS (un seul flux actif).
+   */
+  const openBackCamera = useCallback(async (backVideoEl) => {
+    setError(null)
     setIsReady(false)
 
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError('Caméra non disponible sur cet appareil.')
+      return false
+    }
+
+    const stream = await openStream('environment')
+
+    if (!stream) {
+      // Fallback : essaie la caméra avant si arrière indisponible
+      const frontStream = await openStream('user')
+      if (!frontStream) {
+        setError('Accès aux caméras refusé ou indisponible.')
+        return false
+      }
+      backStreamRef.current = frontStream
+    } else {
+      backStreamRef.current = stream
+    }
+
+    if (backVideoEl) {
+      backVideoEl.srcObject = backStreamRef.current
+      await waitForVideo(backVideoEl)
+    }
+
+    setIsReady(true)
+    return true
+  }, [])
+
+  /**
+   * Capture séquentielle :
+   * 1. Snap caméra arrière (depuis le viewfinder actif)
+   * 2. Ferme la caméra arrière
+   * 3. Ouvre la caméra avant brièvement
+   * 4. Attend initialisation (~600ms)
+   * 5. Snap caméra avant (en miroir)
+   * 6. Ferme la caméra avant
+   *
+   * @param {HTMLVideoElement} backVideoEl  Élément <video> du viewfinder
+   * @returns {{ photoBack: string|null, photoFront: string|null }}
+   */
+  const capture = useCallback(async (backVideoEl) => {
+    setIsCapturing(true)
+
+    // 1. Snap arrière depuis le viewfinder
+    const photoBack = captureFrame(backVideoEl, false)
+
+    // 2. Ferme la caméra arrière
+    stopStream(backStreamRef)
+    if (backVideoEl) backVideoEl.srcObject = null
+    setIsReady(false)
+
+    // 3. Ouvre la caméra avant
+    let photoFront = null
+    try {
+      const frontStream = await openStream('user')
+      if (frontStream && backVideoEl) {
+        frontStreamRef.current = frontStream
+        backVideoEl.srcObject  = frontStream   // réutilise le même élément <video>
+        await waitForVideo(backVideoEl, 2000)
+        photoFront = captureFrame(backVideoEl, true)  // miroir
+      }
+    } catch {
+      // Caméra avant indisponible → photoFront reste null
+    } finally {
+      stopStream(frontStreamRef)
+      if (backVideoEl) backVideoEl.srcObject = null
+    }
+
+    setIsCapturing(false)
     return { photoBack, photoFront }
   }, [])
 
   /**
-   * Stoppe les streams sans capturer (ex: fermeture de l'écran caméra).
+   * Arrête tous les streams (ex: fermeture de l'écran caméra).
    */
   const stopStreams = useCallback(() => {
-    backStreamRef.current?.getTracks().forEach((t) => t.stop())
-    frontStreamRef.current?.getTracks().forEach((t) => t.stop())
-    backStreamRef.current  = null
-    frontStreamRef.current = null
+    stopStream(backStreamRef)
+    stopStream(frontStreamRef)
     setIsReady(false)
+    setIsCapturing(false)
   }, [])
 
   return {
-    openStreams,
+    openBackCamera,
     capture,
     stopStreams,
     isReady,
+    isCapturing,
     error,
-    backStreamRef,
-    frontStreamRef,
   }
 }
