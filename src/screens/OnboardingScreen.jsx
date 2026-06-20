@@ -72,9 +72,9 @@ export default function OnboardingScreen() {
   return (
     <div className="min-h-screen bg-caca-bg flex flex-col items-center justify-center px-6 font-nunito">
       <div className="mb-10 text-center">
-        <div className="text-7xl mb-3">💩</div>
+        <img src="/icon-source.png" alt="BeCaca" className="w-24 h-24 mx-auto mb-3 rounded-3xl shadow-md object-cover" />
         <h1 className="text-4xl font-black text-caca-primary tracking-tight">BeCaca</h1>
-        <p className="text-caca-muted text-sm mt-1">L'appli qui ne se prend pas au sérieux</p>
+        <p className="text-caca-muted text-sm mt-1">The real shitz</p>
       </div>
 
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm p-6">
